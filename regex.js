@@ -16,6 +16,7 @@
 
 var generateGrid = function( x, y ){
 
+	// Simple init.. nothing fancy.
 	var content = [ ];
 	for( var i=0; i<y; i++ ){
 		var _row = [ ];
@@ -29,9 +30,6 @@ var generateGrid = function( x, y ){
 		content: content,
 		add: function( ){
 			console.log( "WHAT" );
-		},
-		foo: function( ){
-			console.log( JSON.stringify( this.content ) );
 		}
 	}
 };
