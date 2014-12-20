@@ -1,5 +1,6 @@
+var vm		= require( "vm" );
 var uuid	= require( "uuid" );
-var util	= require( "util" );
+var async	= require( "async" );
 var Promise	= require( "lie" );
 
 var db = function( ){
@@ -24,8 +25,7 @@ var db = function( ){
 
 				// Figure out what the uuid for this document should be. Make sure we don't
 				// have a collision.. even though its stupidly small.
-				var _uuid = uuid.v4();
-				while( self.docs[_uuid] ){ _uuid = uuid.v4(); }
+				var _uuid = uuid.v4(); while( self.docs[_uuid] ){ _uuid = uuid.v4(); }
 
 				// Lets insert the document.
 				self.docs[_uuid] = rawJSON;
@@ -48,31 +48,59 @@ var db = function( ){
 			} );
 		},
 
-		defineView: function( name, func ){
+		defineView: function( options, func ){
 			var self = this;
 			return new Promise( function( resolve, reject ){
 
 				var _newView = { data: { }, func: func };
 
 				var _runPromises = [ ];
-				Object.keys(self.docs).forEach( function( docId ){
-					_runPromises.push( new Promise( function( resolve, reject ){
-						func( self.docs[docId] ).then( function( result ){
-							return resolve( { 'key': docId, 'value': result } );
-						}, reject );
-					} ) );
-				} );
 
-				Promise.all( _runPromises ).then( function( results ){
-					results.forEach( function( result ){
-						if( result.value !== undefined ){
-							_newView.data[result.key] = result.value;
-						}
+				if( options.previous ){
+					self.query( options.previous ).then( function( results ){
+
+						var _runPromises = [ ];
+						Object.keys( results ).forEach( function( resultKey ){
+							_runPromises.push( new Promise( function( resolve, reject ){
+								func( resultKey, results[resultKey] ).then( function( result ){
+									return resolve( { key: resultKey, value: result } );
+								}, reject );
+							} ) );
+						} );
+
+						Promise.all( _runPromises ).then( function( results ){
+							results.forEach( function( result ){
+								if( result.value !== undefined ){
+									_newView.data[result.key] = result.value;
+								}
+							} );
+
+							self.views[options.name] = _newView;
+							return resolve( );
+						} );
+					} );
+				}else{
+
+					Object.keys(self.docs).forEach( function( docId ){
+						_runPromises.push( new Promise( function( resolve, reject ){
+							func( self.docs[docId] ).then( function( result ){
+								return resolve( { 'key': docId, 'value': result } );
+							}, reject );
+						} ) );
 					} );
 
-					self.views[name] = _newView;
-					return resolve( );
-				} );
+					Promise.all( _runPromises ).then( function( results ){
+
+						results.forEach( function( result ){
+							if( result.value !== undefined ){
+								_newView.data[result.key] = result.value;
+							}
+						} );
+
+						self.views[options.name] = _newView;
+						return resolve( );
+					} );
+				}
 			} );
 		},
 
@@ -83,6 +111,8 @@ var db = function( ){
 			return new Promise( function( resolve, reject ){
 
 				var _promises = [ ];
+
+				// Going to need to order this at some point; as views will be able to depend on other views.
 				Object.keys( self.views ).forEach( function( viewName ){
 					_promises.push( new Promise( function( resolve, reject ){
 						self.views[viewName].func( self.docs[docId] ).then( function( result ){
@@ -108,33 +138,59 @@ var db = function( ){
 
 myDb = db( );
 
-var _insertPromises = [ ];
-for( var z=0; z<10; z++ ){
-	_insertPromises.push( myDb.insert( { "firstName": "Rob", "lastName": "Keizer" + z } ) );
-}
+async.series( [ function( cb ){
 
-_insertPromises.push( myDb.insert( { "foo": "bar" } ) );
+	// Lets insert some random documents.
+	var _insertPromises = [ ];
+	for( var z=0; z<10; z++ ){
+		_insertPromises.push( myDb.insert( { "firstName": "Rob", "lastName": "Keizer" + z } ) );
+		_insertPromises.push( myDb.insert( { "foo": "bar", "z": z } ) );
+	}
 
-Promise.all( _insertPromises ).then( function( ){
+	Promise.all( _insertPromises ).then( function( ){ cb( ); } );
 
-	console.log( "Inserted the documents.." );
+}, function( cb ){
+	
+	// Lets define a view.
 
-	myDb.defineView( "by-lastname", function( doc ){
+	myDb.defineView( { name: "by-lastname" }, function( doc ){
 		return new Promise( function( resolve, reject ){
 			if( doc.lastName ){
-				return resolve( doc.lastName, null );
+				return resolve( doc.lastName );
 			}
 			return resolve( );
 		} );
-	} ).then( function( ){
-		myDb.query( "by-lastname" ).then( function( result ){
-			console.log( result );
+	} ).then( function( ){ return cb( ); } );
 
-			myDb.insert( { "meh": "hope", "lastName": "Meh" } ).then( function( ){
-				myDb.query( "by-lastname" ).then( function( result ){
-					console.log( result );
-				} );
-			} );
+}, function( cb ){
+
+	// Lets insert another doc to make sure that the views update as expected.
+	myDb.insert( { "meh": "hope", "lastName": "Meh" } ).then( function( ){ cb( ); } );
+}, function( cb ){
+
+	// Another view 
+	myDb.defineView( { name: "ending-in-number", previous: "by-lastname" }, function( docId, value ){
+		return new Promise( function( resolve, reject ){
+			if( value.match( /[0-9]$/ ) ){
+				return resolve( value );
+			}
+			return resolve( );
 		} );
+	} ).then( function( ){ return cb( ); } );
+
+}, function( cb ){
+
+	myDb.query( "by-lastname" ).then( function( result ){
+		console.log( "by-lastname" );
+		console.log( result );
+		return cb( );
 	} );
+
+}, function( cb ){
+	console.log( "ending-in-number" );
+	myDb.query( "ending-in-number" ).then( function( result ){
+		console.log( result );
+	} );
+} ], function( err ){
+	
 } );
