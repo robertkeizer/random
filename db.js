@@ -63,7 +63,7 @@ var db = function( ){
 						Object.keys( results ).forEach( function( resultKey ){
 							_runPromises.push( new Promise( function( resolve, reject ){
 								func( resultKey, results[resultKey] ).then( function( result ){
-									return resolve( { key: resultKey, value: result } );
+									return resolve( { key: result.key, value: result.value } );
 								}, reject );
 							} ) );
 						} );
@@ -82,16 +82,13 @@ var db = function( ){
 				}else{
 
 					Object.keys(self.docs).forEach( function( docId ){
-						_runPromises.push( new Promise( function( resolve, reject ){
-							func( self.docs[docId] ).then( function( result ){
-								return resolve( { 'key': docId, 'value': result } );
-							}, reject );
-						} ) );
+						_runPromises.push( func( self.docs[docId] ) );
 					} );
 
 					Promise.all( _runPromises ).then( function( results ){
 
 						results.forEach( function( result ){
+							console.log( "I have result of " + JSON.stringify( result ) );
 							if( result.value !== undefined ){
 								_newView.data[result.key] = result.value;
 							}
@@ -156,7 +153,7 @@ async.series( [ function( cb ){
 	myDb.defineView( { name: "by-lastname" }, function( doc ){
 		return new Promise( function( resolve, reject ){
 			if( doc.lastName ){
-				return resolve( doc.lastName );
+				return resolve( { key: doc.lastName, value: null } );
 			}
 			return resolve( );
 		} );
@@ -169,10 +166,10 @@ async.series( [ function( cb ){
 }, function( cb ){
 
 	// Another view 
-	myDb.defineView( { name: "ending-in-number", previous: "by-lastname" }, function( docId, value ){
+	myDb.defineView( { name: "ending-in-number", previous: "by-lastname" }, function( docId, key ){
 		return new Promise( function( resolve, reject ){
-			if( value.match( /[0-9]$/ ) ){
-				return resolve( value );
+			if( key.match( /[0-9]$/ ) ){
+				return resolve( { key: value, value: null } );
 			}
 			return resolve( );
 		} );
