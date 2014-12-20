@@ -44,7 +44,7 @@ var db = function( ){
 					return reject( "Unknown view" );
 				}
 
-				return resolve( self.views[whatView] );
+				return resolve( self.views[whatView].data );
 			} );
 		},
 
@@ -52,12 +52,27 @@ var db = function( ){
 			var self = this;
 			return new Promise( function( resolve, reject ){
 
-				// Lets make sure we don't already have this view.
-				if( this.views[name] ){
-					return reject( "View with that name already defined." );
-				}
+				var _newView = { data: { }, func: func };
 
-				
+				var _runPromises = [ ];
+				Object.keys(self.docs).forEach( function( docId ){
+					_runPromises.push( new Promise( function( resolve, reject ){
+						func( self.docs[docId] ).then( function( result ){
+							return resolve( { 'key': docId, 'value': result } );
+						}, reject );
+					} ) );
+				} );
+
+				Promise.all( _runPromises ).then( function( results ){
+					results.forEach( function( result ){
+						if( result.value !== undefined ){
+							_newView.data[result.key] = result.value;
+						}
+					} );
+
+					self.views[name] = _newView;
+					return resolve( );
+				} );
 			} );
 		},
 
@@ -66,7 +81,26 @@ var db = function( ){
 		_updateViews: function( docId ){
 			var self = this;
 			return new Promise( function( resolve, reject ){
-				
+
+				var _promises = [ ];
+				Object.keys( self.views ).forEach( function( viewName ){
+					_promises.push( new Promise( function( resolve, reject ){
+						self.views[viewName].func( self.docs[docId] ).then( function( result ){
+
+							if( self.views[viewName].data[docId] && result === undefined ){
+								delete self.views[viewName].data[docId];
+							}
+
+							if( result !== undefined ){
+								self.views[viewName].data[docId] = result;
+							}
+
+							return resolve( );
+						} );
+					} ) );
+				} );
+
+				Promise.all( _promises ).then( resolve, reject );
 			} );
 		}
 	}
@@ -75,10 +109,32 @@ var db = function( ){
 myDb = db( );
 
 var _insertPromises = [ ];
-for( var z=0; z<100; z++ ){
-	_insertPromises.push( myDb.insert( { "firstName": "Rob", "lastName": "Keizer" } ) );
+for( var z=0; z<10; z++ ){
+	_insertPromises.push( myDb.insert( { "firstName": "Rob", "lastName": "Keizer" + z } ) );
 }
 
+_insertPromises.push( myDb.insert( { "foo": "bar" } ) );
+
 Promise.all( _insertPromises ).then( function( ){
-	console.log( myDb );
+
+	console.log( "Inserted the documents.." );
+
+	myDb.defineView( "by-lastname", function( doc ){
+		return new Promise( function( resolve, reject ){
+			if( doc.lastName ){
+				return resolve( doc.lastName, null );
+			}
+			return resolve( );
+		} );
+	} ).then( function( ){
+		myDb.query( "by-lastname" ).then( function( result ){
+			console.log( result );
+
+			myDb.insert( { "meh": "hope", "lastName": "Meh" } ).then( function( ){
+				myDb.query( "by-lastname" ).then( function( result ){
+					console.log( result );
+				} );
+			} );
+		} );
+	} );
 } );
