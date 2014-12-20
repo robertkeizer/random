@@ -22,12 +22,18 @@ var db = function( ){
 					return Promise.all( _promises ).then( resolve, reject );
 				}
 
+				// Figure out what the uuid for this document should be. Make sure we don't
+				// have a collision.. even though its stupidly small.
 				var _uuid = uuid.v4();
-				while( self.docs[_uuid] ){
-					_uuid = uuid.v4();
-				}
+				while( self.docs[_uuid] ){ _uuid = uuid.v4(); }
+
+				// Lets insert the document.
 				self.docs[_uuid] = rawJSON;
-				return resolve( { key: _uuid } );
+
+				// Update any views that may require updating.
+				self._updateViews( _uuid ).then( function( ){
+					return resolve( { key: _uuid } );
+				}, reject );
 			} );
 		},
 
@@ -42,8 +48,26 @@ var db = function( ){
 			} );
 		},
 
-		defineView: function( ){
-			
+		defineView: function( name, func ){
+			var self = this;
+			return new Promise( function( resolve, reject ){
+
+				// Lets make sure we don't already have this view.
+				if( this.views[name] ){
+					return reject( "View with that name already defined." );
+				}
+
+				
+			} );
+		},
+
+		// This function makes sure that all the views we have
+		// are up to date..
+		_updateViews: function( docId ){
+			var self = this;
+			return new Promise( function( resolve, reject ){
+				
+			} );
 		}
 	}
 };
