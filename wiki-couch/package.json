@@ -1,0 +1,7 @@
+{
+	"devDependencies": {
+		"irc": "0.3.9",
+		"config": "1.10.0",
+		"nano": "6.0.2"
+	}
+}
